@@ -306,7 +306,7 @@ compliance:
 | `gitagent validate [--compliance]` | Validate against spec and regulatory requirements |
 | `gitagent info` | Display agent summary |
 | `gitagent export --format <fmt>` | Export to other formats (see adapters below) |
-| `gitagent import --from <fmt> <path>` | Import (`claude`, `cursor`, `crewai`) |
+| `gitagent import --from <fmt> <path>` | Import (`claude`, `cursor`, `crewai`, `opencode`) |
 | `gitagent run <source> --adapter <a>` | Run an agent from a git repo or local directory |
 | `gitagent install` | Resolve and install git-based dependencies |
 | `gitagent audit` | Generate compliance audit report |
@@ -356,6 +356,7 @@ Adapters are used by both `export` and `run`. Available adapters:
 | `lyzr` | Lyzr Studio agent |
 | `github` | GitHub Actions agent |
 | `git` | Git-native execution (run only) |
+| `opencode` | OpenCode instructions + config |
 | `openclaw` | OpenClaw format |
 | `nanobot` | Nanobot format |
 

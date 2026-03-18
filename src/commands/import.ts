@@ -187,6 +187,76 @@ function importFromCrewAI(sourcePath: string, targetDir: string): void {
   }
 }
 
+function importFromOpenCode(sourcePath: string, targetDir: string): void {
+  const sourceDir = resolve(sourcePath);
+
+  // Look for .opencode/instructions.md or opencode.json
+  const instructionsPath = join(sourceDir, '.opencode', 'instructions.md');
+  const configPath = join(sourceDir, 'opencode.json');
+
+  let instructions = '';
+  let config: Record<string, unknown> = {};
+
+  if (existsSync(instructionsPath)) {
+    instructions = readFileSync(instructionsPath, 'utf-8');
+    info('Found .opencode/instructions.md');
+  } else {
+    throw new Error('No .opencode/instructions.md found in source directory');
+  }
+
+  if (existsSync(configPath)) {
+    try {
+      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      info('Found opencode.json');
+    } catch { /* ignore malformed config */ }
+  }
+
+  const dirName = basename(sourceDir);
+
+  // Determine model from opencode.json
+  const model = (config.model as string) || undefined;
+  const agentYaml: Record<string, unknown> = {
+    spec_version: '0.1.0',
+    name: dirName.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+    version: '0.1.0',
+    description: `Imported from OpenCode project: ${dirName}`,
+  };
+  if (model) {
+    agentYaml.model = { preferred: model };
+  }
+
+  writeFileSync(join(targetDir, 'agent.yaml'), yaml.dump(agentYaml), 'utf-8');
+  success('Created agent.yaml');
+
+  // Convert instructions.md to SOUL.md + RULES.md
+  const sections = parseSections(instructions);
+  let soulContent = '# Soul\n\n';
+  let rulesContent = '# Rules\n\n';
+  let hasRules = false;
+
+  for (const [title, content] of sections) {
+    const lower = title.toLowerCase();
+    if (lower.includes('rule') || lower.includes('constraint') || lower.includes('never') || lower.includes('always') || lower.includes('must') || lower.includes('compliance')) {
+      rulesContent += `## ${title}\n${content}\n\n`;
+      hasRules = true;
+    } else {
+      soulContent += `## ${title}\n${content}\n\n`;
+    }
+  }
+
+  if (sections.length === 0) {
+    soulContent += instructions;
+  }
+
+  writeFileSync(join(targetDir, 'SOUL.md'), soulContent, 'utf-8');
+  success('Created SOUL.md');
+
+  if (hasRules) {
+    writeFileSync(join(targetDir, 'RULES.md'), rulesContent, 'utf-8');
+    success('Created RULES.md');
+  }
+}
+
 function parseSections(markdown: string): [string, string][] {
   const sections: [string, string][] = [];
   const lines = markdown.split('\n');
@@ -215,7 +285,7 @@ function parseSections(markdown: string): [string, string][] {
 
 export const importCommand = new Command('import')
   .description('Import from other agent formats')
-  .requiredOption('--from <format>', 'Source format (claude, cursor, crewai)')
+  .requiredOption('--from <format>', 'Source format (claude, cursor, crewai, opencode)')
   .argument('<path>', 'Source file or directory path')
   .option('-d, --dir <dir>', 'Target directory', '.')
   .action((sourcePath: string, options: ImportOptions) => {
@@ -236,9 +306,12 @@ export const importCommand = new Command('import')
         case 'crewai':
           importFromCrewAI(sourcePath, targetDir);
           break;
+        case 'opencode':
+          importFromOpenCode(sourcePath, targetDir);
+          break;
         default:
           error(`Unknown format: ${options.from}`);
-          info('Supported formats: claude, cursor, crewai');
+          info('Supported formats: claude, cursor, crewai, opencode');
           process.exit(1);
       }
 
