@@ -190,18 +190,18 @@ function importFromCrewAI(sourcePath: string, targetDir: string): void {
 function importFromOpenCode(sourcePath: string, targetDir: string): void {
   const sourceDir = resolve(sourcePath);
 
-  // Look for .opencode/instructions.md or opencode.json
-  const instructionsPath = join(sourceDir, '.opencode', 'instructions.md');
+  // Look for AGENTS.md (OpenCode's instruction file) or opencode.json
+  const agentsMdPath = join(sourceDir, 'AGENTS.md');
   const configPath = join(sourceDir, 'opencode.json');
 
   let instructions = '';
   let config: Record<string, unknown> = {};
 
-  if (existsSync(instructionsPath)) {
-    instructions = readFileSync(instructionsPath, 'utf-8');
-    info('Found .opencode/instructions.md');
+  if (existsSync(agentsMdPath)) {
+    instructions = readFileSync(agentsMdPath, 'utf-8');
+    info('Found AGENTS.md');
   } else {
-    throw new Error('No .opencode/instructions.md found in source directory');
+    throw new Error('No AGENTS.md found in source directory');
   }
 
   if (existsSync(configPath)) {
@@ -213,8 +213,9 @@ function importFromOpenCode(sourcePath: string, targetDir: string): void {
 
   const dirName = basename(sourceDir);
 
-  // Determine model from opencode.json
-  const model = (config.model as string) || undefined;
+  // Determine model from opencode.json (format: "provider/model-id")
+  const rawModel = (config.model as string) || undefined;
+  const model = rawModel?.includes('/') ? rawModel.split('/').slice(1).join('/') : rawModel;
   const agentYaml: Record<string, unknown> = {
     spec_version: '0.1.0',
     name: dirName.toLowerCase().replace(/[^a-z0-9-]/g, '-'),

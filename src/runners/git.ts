@@ -182,8 +182,8 @@ function detectAdapter(agentDir: string, manifest: AgentManifest): string {
     info('Auto-detected adapter: github (from .github_models)');
     return 'github';
   }
-  if (existsSync(join(agentDir, '.opencode')) || existsSync(join(agentDir, 'opencode.json'))) {
-    info('Auto-detected adapter: opencode (from .opencode/ or opencode.json)');
+  if (existsSync(join(agentDir, 'opencode.json'))) {
+    info('Auto-detected adapter: opencode (from opencode.json)');
     return 'opencode';
   }
 

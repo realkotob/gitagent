@@ -3,13 +3,14 @@ import { join, resolve } from 'node:path';
 import yaml from 'js-yaml';
 import { loadAgentManifest, loadFileIfExists } from '../utils/loader.js';
 import { loadAllSkills, getAllowedTools } from '../utils/skill-loader.js';
+import { buildComplianceSection } from './shared.js';
 
 /**
  * Export a gitagent to OpenCode format.
  *
  * OpenCode (sst/opencode) uses:
- *   - .opencode/instructions.md   (custom agent instructions)
- *   - opencode.json               (project configuration)
+ *   - AGENTS.md              (custom agent instructions, project root)
+ *   - opencode.json          (project configuration)
  *
  * Returns structured output with all files that should be written.
  */
@@ -35,7 +36,7 @@ export function exportToOpenCodeString(dir: string): string {
   const exp = exportToOpenCode(dir);
   const parts: string[] = [];
 
-  parts.push('# === .opencode/instructions.md ===');
+  parts.push('# === AGENTS.md ===');
   parts.push(exp.instructions);
   parts.push('\n# === opencode.json ===');
   parts.push(JSON.stringify(exp.config, null, 2));
@@ -177,8 +178,12 @@ function buildConfig(manifest: ReturnType<typeof loadAgentManifest>): Record<str
   if (manifest.model?.preferred) {
     const model = manifest.model.preferred;
     const provider = inferProvider(model);
-    config.provider = provider;
-    config.model = model;
+    config.model = `${provider}/${model}`;
+    config.provider = {
+      [provider]: {
+        npm: getNpmPackage(provider),
+      },
+    };
   }
 
   return config;
@@ -193,65 +198,13 @@ function inferProvider(model: string): string {
   return 'openai';
 }
 
-function buildComplianceSection(compliance: NonNullable<ReturnType<typeof loadAgentManifest>['compliance']>): string {
-  const c = compliance;
-  const constraints: string[] = [];
-
-  if (c.supervision?.human_in_the_loop === 'always') {
-    constraints.push('- All decisions require human approval before execution');
-  }
-  if (c.supervision?.escalation_triggers) {
-    constraints.push('- Escalate to human supervisor when:');
-    for (const trigger of c.supervision.escalation_triggers) {
-      for (const [key, value] of Object.entries(trigger)) {
-        constraints.push(`  - ${key}: ${value}`);
-      }
-    }
-  }
-  if (c.communications?.fair_balanced) {
-    constraints.push('- All communications must be fair and balanced (FINRA 2210)');
-  }
-  if (c.communications?.no_misleading) {
-    constraints.push('- Never make misleading, exaggerated, or promissory statements');
-  }
-  if (c.data_governance?.pii_handling === 'redact') {
-    constraints.push('- Redact all PII from outputs');
-  }
-  if (c.data_governance?.pii_handling === 'prohibit') {
-    constraints.push('- Do not process any personally identifiable information');
-  }
-
-  if (c.segregation_of_duties) {
-    const sod = c.segregation_of_duties;
-    constraints.push('- Segregation of duties is enforced:');
-    if (sod.assignments) {
-      for (const [agentName, roles] of Object.entries(sod.assignments)) {
-        constraints.push(`  - Agent "${agentName}" has role(s): ${roles.join(', ')}`);
-      }
-    }
-    if (sod.conflicts) {
-      constraints.push('- Duty separation rules (no single agent may hold both):');
-      for (const [a, b] of sod.conflicts) {
-        constraints.push(`  - ${a} and ${b}`);
-      }
-    }
-    if (sod.handoffs) {
-      constraints.push('- The following actions require multi-agent handoff:');
-      for (const h of sod.handoffs) {
-        constraints.push(`  - ${h.action}: must pass through roles ${h.required_roles.join(' → ')}${h.approval_required !== false ? ' (approval required)' : ''}`);
-      }
-    }
-    if (sod.isolation?.state === 'full') {
-      constraints.push('- Agent state/memory is fully isolated per role');
-    }
-    if (sod.isolation?.credentials === 'separate') {
-      constraints.push('- Credentials are segregated per role');
-    }
-    if (sod.enforcement === 'strict') {
-      constraints.push('- SOD enforcement is STRICT — violations will block execution');
-    }
-  }
-
-  if (constraints.length === 0) return '';
-  return `## Compliance Constraints\n\n${constraints.join('\n')}`;
+function getNpmPackage(provider: string): string {
+  const packages: Record<string, string> = {
+    anthropic: '@ai-sdk/anthropic',
+    openai: '@ai-sdk/openai',
+    google: '@ai-sdk/google',
+    deepseek: '@ai-sdk/deepseek',
+    ollama: '@ai-sdk/ollama',
+  };
+  return packages[provider] || `@ai-sdk/${provider}`;
 }

@@ -15,13 +15,13 @@ export interface OpenCodeRunOptions {
  * Run a gitagent agent using OpenCode (sst/opencode).
  *
  * Creates a temporary workspace with:
- *   - .opencode/instructions.md  (agent instructions)
- *   - opencode.json              (provider + model config)
+ *   - AGENTS.md       (agent instructions)
+ *   - opencode.json   (provider + model config)
  *
  * Then launches `opencode` in that workspace. OpenCode reads both files
  * automatically on startup.
  *
- * Supports both interactive mode (no prompt) and single-shot mode (-p).
+ * Supports both interactive mode (no prompt) and single-shot mode (`opencode run -p`).
  */
 export function runWithOpenCode(agentDir: string, manifest: AgentManifest, options: OpenCodeRunOptions = {}): void {
   const exp = exportToOpenCode(agentDir);
@@ -30,16 +30,14 @@ export function runWithOpenCode(agentDir: string, manifest: AgentManifest, optio
   const workspaceDir = join(tmpdir(), `gitagent-opencode-${randomBytes(4).toString('hex')}`);
   mkdirSync(workspaceDir, { recursive: true });
 
-  // Write .opencode/instructions.md
-  const instructionsDir = join(workspaceDir, '.opencode');
-  mkdirSync(instructionsDir, { recursive: true });
-  writeFileSync(join(instructionsDir, 'instructions.md'), exp.instructions, 'utf-8');
+  // Write AGENTS.md at project root
+  writeFileSync(join(workspaceDir, 'AGENTS.md'), exp.instructions, 'utf-8');
 
   // Write opencode.json
   writeFileSync(join(workspaceDir, 'opencode.json'), JSON.stringify(exp.config, null, 2), 'utf-8');
 
   info(`Workspace prepared at ${workspaceDir}`);
-  info(`  .opencode/instructions.md, opencode.json`);
+  info(`  AGENTS.md, opencode.json`);
   if (manifest.model?.preferred) {
     info(`  Model: ${manifest.model.preferred}`);
   }
@@ -47,9 +45,9 @@ export function runWithOpenCode(agentDir: string, manifest: AgentManifest, optio
   // Build opencode CLI args
   const args: string[] = [];
 
-  // If a prompt is provided, pass it for single-shot mode
+  // Single-shot mode uses `opencode run --prompt "..."`, interactive is just `opencode`
   if (options.prompt) {
-    args.push('--prompt', options.prompt);
+    args.push('run', '--prompt', options.prompt);
   }
 
   info(`Launching OpenCode agent "${manifest.name}"...`);
@@ -57,23 +55,21 @@ export function runWithOpenCode(agentDir: string, manifest: AgentManifest, optio
     info('Starting interactive mode. Type your messages to chat.');
   }
 
-  try {
-    const result = spawnSync('opencode', args, {
-      stdio: 'inherit',
-      cwd: workspaceDir,
-      env: { ...process.env },
-    });
+  const result = spawnSync('opencode', args, {
+    stdio: 'inherit',
+    cwd: workspaceDir,
+    env: { ...process.env },
+  });
 
-    if (result.error) {
-      error(`Failed to launch OpenCode: ${result.error.message}`);
-      info('Make sure OpenCode is installed: npm install -g opencode');
-      info('Or: brew install sst/tap/opencode');
-      process.exit(1);
-    }
+  // Cleanup temp workspace before exiting
+  try { rmSync(workspaceDir, { recursive: true, force: true }); } catch { /* ignore */ }
 
-    process.exit(result.status ?? 0);
-  } finally {
-    // Cleanup temp workspace
-    try { rmSync(workspaceDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  if (result.error) {
+    error(`Failed to launch OpenCode: ${result.error.message}`);
+    info('Make sure OpenCode is installed: npm install -g opencode');
+    info('Or: brew install sst/tap/opencode');
+    process.exit(1);
   }
+
+  process.exit(result.status ?? 0);
 }
