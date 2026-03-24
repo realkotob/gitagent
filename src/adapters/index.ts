@@ -7,3 +7,4 @@ export { exportToNanobotString, exportToNanobot } from './nanobot.js';
 export { exportToCopilotString, exportToCopilot } from './copilot.js';
 export { exportToOpenCodeString, exportToOpenCode } from './opencode.js';
 export { exportToCursorString, exportToCursor } from './cursor.js';
+export { exportToCodexString, exportToCodex } from './codex.js';
