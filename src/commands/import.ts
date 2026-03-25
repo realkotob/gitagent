@@ -323,6 +323,97 @@ function importFromOpenCode(sourcePath: string, targetDir: string): void {
   }
 }
 
+function importFromGemini(sourcePath: string, targetDir: string): void {
+  const sourceDir = resolve(sourcePath);
+
+  // Look for GEMINI.md
+  const geminiMdPath = join(sourceDir, 'GEMINI.md');
+  if (!existsSync(geminiMdPath)) {
+    throw new Error('GEMINI.md not found in source directory');
+  }
+
+  const geminiMd = readFileSync(geminiMdPath, 'utf-8');
+
+  // Look for .gemini/settings.json (optional)
+  let settings: Record<string, unknown> = {};
+  const settingsPath = join(sourceDir, '.gemini', 'settings.json');
+  if (existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+      info('Found .gemini/settings.json');
+    } catch { /* ignore malformed config */ }
+  }
+
+  const dirName = basename(sourceDir);
+
+  // Determine model from settings.json (can be string or { id, provider } object)
+  const rawModel = settings.model;
+  const model = typeof rawModel === 'object' && rawModel !== null
+    ? (rawModel as Record<string, string>).id
+    : rawModel as string | undefined;
+  const agentYaml: Record<string, unknown> = {
+    spec_version: '0.1.0',
+    name: dirName.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+    version: '0.1.0',
+    description: `Imported from Gemini CLI project: ${dirName}`,
+  };
+  if (model) {
+    agentYaml.model = { preferred: model };
+  }
+
+  // Ensure target directory exists
+  mkdirSync(targetDir, { recursive: true });
+
+  // Map approval mode to compliance
+  if (settings.approvalMode) {
+    const approvalMode = settings.approvalMode as string;
+    let hitl: string | undefined;
+    if (approvalMode === 'plan') hitl = 'always';
+    else if (approvalMode === 'default') hitl = 'conditional';
+    else if (approvalMode === 'yolo') hitl = 'none';
+    else if (approvalMode === 'auto_edit') hitl = 'advisory';
+    
+    if (hitl) {
+      agentYaml.compliance = {
+        supervision: {
+          human_in_the_loop: hitl,
+        },
+      };
+    }
+  }
+
+  writeFileSync(join(targetDir, 'agent.yaml'), yaml.dump(agentYaml), 'utf-8');
+  success('Created agent.yaml');
+
+  // Convert GEMINI.md to SOUL.md + RULES.md
+  const sections = parseSections(geminiMd);
+  let soulContent = '# Soul\n\n';
+  let rulesContent = '# Rules\n\n';
+  let hasRules = false;
+
+  for (const [title, content] of sections) {
+    const lower = title.toLowerCase();
+    if (lower.includes('rule') || lower.includes('constraint') || lower.includes('never') || lower.includes('always') || lower.includes('must') || lower.includes('compliance')) {
+      rulesContent += `## ${title}\n${content}\n\n`;
+      hasRules = true;
+    } else {
+      soulContent += `## ${title}\n${content}\n\n`;
+    }
+  }
+
+  if (sections.length === 0) {
+    soulContent += geminiMd;
+  }
+
+  writeFileSync(join(targetDir, 'SOUL.md'), soulContent, 'utf-8');
+  success('Created SOUL.md');
+
+  if (hasRules) {
+    writeFileSync(join(targetDir, 'RULES.md'), rulesContent, 'utf-8');
+    success('Created RULES.md');
+  }
+}
+
 function parseSections(markdown: string): [string, string][] {
   const sections: [string, string][] = [];
   const lines = markdown.split('\n');
@@ -351,7 +442,7 @@ function parseSections(markdown: string): [string, string][] {
 
 export const importCommand = new Command('import')
   .description('Import from other agent formats')
-  .requiredOption('--from <format>', 'Source format (claude, cursor, crewai, opencode)')
+  .requiredOption('--from <format>', 'Source format (claude, cursor, crewai, opencode, gemini)')
   .argument('<path>', 'Source file or directory path')
   .option('-d, --dir <dir>', 'Target directory', '.')
   .action((sourcePath: string, options: ImportOptions) => {
@@ -375,9 +466,12 @@ export const importCommand = new Command('import')
         case 'opencode':
           importFromOpenCode(sourcePath, targetDir);
           break;
+        case 'gemini':
+          importFromGemini(sourcePath, targetDir);
+          break;
         default:
           error(`Unknown format: ${options.from}`);
-          info('Supported formats: claude, cursor, crewai, opencode');
+          info('Supported formats: claude, cursor, crewai, opencode, gemini');
           process.exit(1);
       }
 
