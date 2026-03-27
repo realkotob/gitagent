@@ -236,7 +236,7 @@ See [`examples/nvidia-deep-researcher/`](examples/nvidia-deep-researcher/) for t
 
 ```bash
 # Install
-npm install -g gitagent
+npm i @open-gitagent/gitagent
 
 # Create a new agent
 gitagent init --template standard
