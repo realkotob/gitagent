@@ -1,6 +1,6 @@
 {
   "name": "@open-gitagent/gitagent",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "description": "A framework-agnostic, git-native standard for defining AI agents",
   "type": "module",
   "bin": {
