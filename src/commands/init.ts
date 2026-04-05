@@ -333,9 +333,191 @@ function createFile(path: string, content: string): void {
   writeFileSync(path, content, 'utf-8');
 }
 
+// --- LLM Wiki template ---
+
+const WIKI_AGENT_YAML = `spec_version: "0.1.0"
+name: my-wiki
+version: 0.1.0
+description: "LLM-maintained personal wiki — a persistent, compounding knowledge base built from raw sources."
+model:
+  preferred: claude-sonnet-4-5-20250929
+skills:
+  - wiki-ingest
+  - wiki-query
+  - wiki-lint
+runtime:
+  max_turns: 50
+  timeout: 300
+tags:
+  - knowledge-management
+  - wiki
+  - research
+`;
+
+const WIKI_SOUL_MD = `# Soul
+
+## Core Identity
+I am a wiki maintainer. I build and maintain a persistent, structured knowledge base from raw sources. I don't just retrieve information — I compile it, cross-reference it, and keep it current. The wiki is my primary artifact.
+
+## Philosophy
+Most knowledge systems rediscover information from scratch on every query. I work differently. When a new source arrives, I read it, extract the key information, and integrate it into the existing wiki — updating entity pages, revising topic summaries, noting contradictions, strengthening the evolving synthesis. Knowledge is compiled once and kept current, not re-derived every time.
+
+## How I Work
+- **The human** curates sources, directs analysis, asks questions, and thinks about meaning
+- **I** do the summarizing, cross-referencing, filing, and bookkeeping that makes a knowledge base useful over time
+- The wiki compounds with every source ingested and every question asked
+
+## Communication Style
+Structured and precise. I use markdown with clear headings, wikilinks for cross-references, and citations to source documents.
+
+## Values
+- Accuracy over speed — verify claims against sources before writing
+- Synthesis over summary — connect ideas across documents, don't just compress them
+- Maintenance is continuous — cross-references, contradictions, and gaps are caught proactively
+- The wiki is the artifact — good answers get filed back as wiki pages, not lost in chat history
+`;
+
+const WIKI_RULES_MD = `# Rules
+
+## Must Always
+- Read memory/wiki/index.md before any operation to understand the current wiki state
+- Cite source documents when making claims in wiki pages
+- Use [[wikilinks]] for cross-references between wiki pages
+- Update memory/wiki/index.md after creating or modifying any wiki page
+- Append to memory/log.md after every ingest, query-filing, or lint operation
+- Flag contradictions when new sources conflict with existing wiki pages
+
+## Must Never
+- Modify files in knowledge/ — raw sources are immutable
+- Delete wiki pages without logging the reason
+- Make claims not grounded in source documents
+- Let the wiki index drift out of sync with actual pages
+
+## Wiki Page Format
+- Every wiki page starts with a # Title heading
+- Include a "Sources" section listing contributing raw documents
+- Use YAML frontmatter: tags, created, updated, source_count
+- One entity, concept, or topic per page
+
+## File Conventions
+- Wiki pages: memory/wiki/ (lowercase-hyphen.md)
+- Index: memory/wiki/index.md (master catalog)
+- Log: memory/log.md (append-only, prefixed with ## [YYYY-MM-DD] operation | title)
+- Sources: knowledge/ with index.yaml catalog
+`;
+
+const WIKI_INGEST_SKILL = `---
+name: wiki-ingest
+description: "Ingest a raw source document into the wiki. Reads the source, extracts key information, creates or updates wiki pages, maintains cross-references, and logs the operation."
+allowed-tools: Read Write Edit Glob Grep
+---
+
+# Wiki Ingest
+
+## Workflow
+1. **Read** the source document from knowledge/
+2. **Discuss** key takeaways with the user
+3. **Update wiki** — create/update entity and concept pages in memory/wiki/
+4. **Write source summary** — memory/wiki/sources/<name>.md
+5. **Update index** — memory/wiki/index.md
+6. **Log** — append to memory/log.md
+
+A single source typically touches 5-15 wiki pages. For each entity or concept:
+- Check if a wiki page exists (read index.md)
+- If yes: integrate new info, update Sources section, bump source_count
+- If no: create new page with frontmatter, content, and citations
+- Add [[wikilinks]] in both directions between related pages
+`;
+
+const WIKI_QUERY_SKILL = `---
+name: wiki-query
+description: "Query the wiki to answer questions. Searches wiki pages, synthesizes answers with citations, and optionally files valuable answers back as new wiki pages."
+allowed-tools: Read Write Edit Glob Grep
+---
+
+# Wiki Query
+
+## Workflow
+1. **Search** — read memory/wiki/index.md, grep for terms across memory/wiki/
+2. **Synthesize** — combine info from multiple pages, cite sources
+3. **Present** — format depends on question (factual, comparison, overview, analysis)
+4. **File back** (optional) — if the answer is a valuable synthesis, ask user if it should become a wiki page
+
+Good answers should not disappear into chat history. Filing them back means explorations compound in the knowledge base.
+`;
+
+const WIKI_LINT_SKILL = `---
+name: wiki-lint
+description: "Health-check the wiki for contradictions, stale claims, orphan pages, missing cross-references, and knowledge gaps."
+allowed-tools: Read Glob Grep
+---
+
+# Wiki Lint
+
+## Checks
+- **Contradictions** — conflicting claims across pages
+- **Stale claims** — pages not updated after newer sources arrived
+- **Orphan pages** — no inbound [[wikilinks]]
+- **Missing pages** — [[wikilinks]] pointing to nonexistent pages
+- **Missing cross-references** — pages discussing same topic without linking
+- **Knowledge gaps** — suggest questions and sources to investigate
+
+## Output
+Structured health report with counts and specific findings per category. Append summary to memory/log.md.
+`;
+
+const WIKI_MEMORY_MD = `# Wiki Memory
+
+## Structure
+- wiki/ — LLM-generated wiki pages
+- wiki/index.md — master catalog
+- log.md — chronological operation log
+- daily-log/ — per-session notes
+
+## Stats
+- Sources ingested: 0
+- Wiki pages: 0
+- Last operation: none
+`;
+
+const WIKI_MEMORY_YAML = `layers:
+  - name: index
+    path: MEMORY.md
+    max_lines: 200
+    format: markdown
+  - name: wiki
+    path: wiki/
+    format: markdown
+  - name: log
+    path: log.md
+    format: markdown
+  - name: daily-log
+    path: daily-log/
+    format: markdown
+    rotation: daily
+
+update_triggers:
+  - on_session_end
+  - on_explicit_save
+
+archive_policy:
+  max_entries: 5000
+  retention_period: 7y
+`;
+
+const WIKI_KNOWLEDGE_INDEX = `documents: []
+# Add your raw source documents here. Example:
+# documents:
+#   - path: article-title.md
+#     tags: [topic, subtopic]
+#     priority: high
+#     always_load: false
+#     description: "What this source contains"
+`;
+
 export const initCommand = new Command('init')
   .description('Scaffold a new gitagent repository')
-  .option('-t, --template <template>', 'Template to use (minimal, standard, full)', 'standard')
+  .option('-t, --template <template>', 'Template to use (minimal, standard, full, llm-wiki)', 'standard')
   .option('-d, --dir <dir>', 'Target directory', '.')
   .action((options: InitOptions) => {
     const dir = resolve(options.dir);
@@ -430,8 +612,39 @@ export const initCommand = new Command('init')
       success('Created hooks/hooks.yaml + scripts');
       success('Created compliance/ (regulatory-map, validation-schedule, risk-assessment)');
       success('Created config/default.yaml');
+    } else if (template === 'llm-wiki') {
+      mkdirSync(dir, { recursive: true });
+      createFile(join(dir, 'agent.yaml'), WIKI_AGENT_YAML);
+      createFile(join(dir, 'SOUL.md'), WIKI_SOUL_MD);
+      createFile(join(dir, 'RULES.md'), WIKI_RULES_MD);
+
+      createDir(join(dir, 'skills', 'wiki-ingest'));
+      createFile(join(dir, 'skills', 'wiki-ingest', 'SKILL.md'), WIKI_INGEST_SKILL);
+      createDir(join(dir, 'skills', 'wiki-query'));
+      createFile(join(dir, 'skills', 'wiki-query', 'SKILL.md'), WIKI_QUERY_SKILL);
+      createDir(join(dir, 'skills', 'wiki-lint'));
+      createFile(join(dir, 'skills', 'wiki-lint', 'SKILL.md'), WIKI_LINT_SKILL);
+
+      createDir(join(dir, 'knowledge'));
+      createFile(join(dir, 'knowledge', 'index.yaml'), WIKI_KNOWLEDGE_INDEX);
+
+      createDir(join(dir, 'memory', 'wiki'));
+      createDir(join(dir, 'memory', 'daily-log'));
+      createFile(join(dir, 'memory', 'MEMORY.md'), WIKI_MEMORY_MD);
+      createFile(join(dir, 'memory', 'memory.yaml'), WIKI_MEMORY_YAML);
+      createFile(join(dir, 'memory', 'wiki', 'index.md'), '# Wiki Index\n\nNo pages yet. Use `/wiki-ingest` to add your first source.\n');
+      createFile(join(dir, 'memory', 'log.md'), '# Operation Log\n');
+
+      success('Created agent.yaml (LLM Wiki)');
+      success('Created SOUL.md (wiki maintainer identity)');
+      success('Created RULES.md (wiki maintenance rules)');
+      success('Created skills/wiki-ingest/SKILL.md');
+      success('Created skills/wiki-query/SKILL.md');
+      success('Created skills/wiki-lint/SKILL.md');
+      success('Created knowledge/index.yaml');
+      success('Created memory/ (MEMORY.md, wiki/, log.md)');
     } else {
-      error(`Unknown template: ${template}. Use minimal, standard, or full.`);
+      error(`Unknown template: ${template}. Use minimal, standard, full, or llm-wiki.`);
       process.exit(1);
     }
 
