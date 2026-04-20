@@ -4,7 +4,7 @@ A framework-agnostic, git-native standard for defining AI agents. `gapman` is th
 
 **Clone a repo, get an agent.**
 
-> The package was previously published as `@open-gitagent/gitagent`. Starting with v0.3.0 it is published as [`gapman`](https://www.npmjs.com/package/gapman). Both `gapman` and `gitagent` commands are installed as binaries — they point to the same CLI.
+> The package was previously published as `@open-gitagent/gitagent`. Starting with v0.3.1 it is published as [`@open-gitagent/gapman`](https://www.npmjs.com/package/@open-gitagent/gapman). Both `gapman` and `gitagent` commands are installed as binaries — they point to the same CLI.
 
 ---
 
@@ -50,13 +50,13 @@ A framework-agnostic, git-native standard for defining AI agents. `gapman` is th
 ## Installation
 
 ```bash
-npm install -g gapman
+npm install -g @open-gitagent/gapman
 ```
 
 Verify:
 
 ```bash
-gapman --version   # 0.3.0
+gapman --version   # 0.3.1
 gapman --help
 
 # gitagent alias also works

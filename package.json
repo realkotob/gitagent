@@ -1,6 +1,6 @@
 {
-  "name": "gapman",
-  "version": "0.3.0",
+  "name": "@open-gitagent/gapman",
+  "version": "0.3.1",
   "description": "GitAgentProtocol (GAP) Manager — framework-agnostic, git-native standard for defining AI agents",
   "type": "module",
   "bin": {

@@ -4,9 +4,9 @@
 
 # GitAgentProtocol (Open GAP) | your repository becomes your agent
 
-> **`gapman`** — the GitAgentProtocol (GAP) Manager CLI. Previously published as `@open-gitagent/gitagent`.
+> **`gapman`** — the GitAgentProtocol (GAP) Manager CLI, published as [`@open-gitagent/gapman`](https://www.npmjs.com/package/@open-gitagent/gapman). Previously published as `@open-gitagent/gitagent`.
 
-[![npm version](https://img.shields.io/npm/v/gapman)](https://www.npmjs.com/package/gapman)
+[![npm version](https://img.shields.io/npm/v/@open-gitagent/gapman)](https://www.npmjs.com/package/@open-gitagent/gapman)
 [![CI](https://github.com/open-gitagent/gitagent/actions/workflows/ci.yml/badge.svg)](https://github.com/open-gitagent/gitagent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Spec: v0.1.0](https://img.shields.io/badge/spec-v0.1.0-blue)](https://github.com/open-gitagent/gitagent/blob/main/spec/SPECIFICATION.md)
@@ -238,7 +238,7 @@ See [`examples/nvidia-deep-researcher/`](examples/nvidia-deep-researcher/) for t
 
 ```bash
 # Install
-npm i -g gapman
+npm i -g @open-gitagent/gapman
 
 # Create a new agent
 gapman init --template standard

@@ -17,7 +17,7 @@ When a user is new to gitagent, wants to set up their first agent, or asks "how 
 
 ### Installation
 ```bash
-npm install -g gapman
+npm install -g @open-gitagent/gapman
 gapman --version
 ```
 

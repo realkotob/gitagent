@@ -18,7 +18,7 @@ const program = new Command();
 program
   .name('gapman')
   .description('GitAgentProtocol (GAP) Manager — framework-agnostic, git-native standard for defining AI agents')
-  .version('0.3.0');
+  .version('0.3.1');
 
 program.addCommand(initCommand);
 program.addCommand(validateCommand);

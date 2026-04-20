@@ -235,7 +235,7 @@ ${manifest.description}
 ## Run
 
 \`\`\`bash
-npx gapman run -r ${repoUrl}
+npx @open-gitagent/gapman run -r ${repoUrl}
 \`\`\`
 
 ## Skills
