@@ -16,9 +16,9 @@ import { registryCommand } from './commands/registry.js';
 const program = new Command();
 
 program
-  .name('gitagent')
-  .description('A framework-agnostic, git-native standard for defining AI agents')
-  .version('0.1.0');
+  .name('gapman')
+  .description('GitAgentProtocol (GAP) Manager — framework-agnostic, git-native standard for defining AI agents')
+  .version('0.3.2');
 
 program.addCommand(initCommand);
 program.addCommand(validateCommand);

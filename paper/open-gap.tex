@@ -1,0 +1,981 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------------------------------------------------------------
+% OpenGAP — GitAgentProtocol: A Git-Native Protocol for the AI Agent Lifecycle
+% arXiv preprint, cs.SE / cs.AI
+% ---------------------------------------------------------------
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[hidelinks]{hyperref}
+\usepackage{authblk}
+\usepackage{microtype}
+\usepackage{caption}
+
+\captionsetup{font=small,labelfont=bf}
+
+\definecolor{codegray}{gray}{0.95}
+\definecolor{codekey}{rgb}{0.13,0.29,0.53}
+\definecolor{codestr}{rgb}{0.58,0.00,0.13}
+\definecolor{codecom}{rgb}{0.30,0.45,0.30}
+
+\lstdefinelanguage{yamlex}{
+  keywords={true,false,null,yes,no},
+  keywordstyle=\color{codekey}\bfseries,
+  sensitive=false,
+  comment=[l]{\#},
+  commentstyle=\color{codecom}\itshape,
+  morestring=[b]',
+  morestring=[b]",
+  stringstyle=\color{codestr}
+}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codegray},
+  frame=single,
+  rulecolor=\color{black!20},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  aboveskip=6pt,
+  belowskip=6pt,
+  xleftmargin=6pt,
+  xrightmargin=6pt
+}
+
+\title{\textbf{\Huge OpenGAP} \\[4pt] \large\textbf{GitAgentProtocol} \\[4pt] \normalsize\textit{A Git-Native Protocol for the AI Agent Lifecycle}}
+
+\author[1]{Shreyas Kapale}
+\affil[1]{OpenGAP Working Group \\ \texttt{shreyas@lyzr.ai} \\ \href{https://gitagent.sh}{gitagent.sh} \\ \href{https://github.com/open-gitagent/gitagent}{github.com/open-gitagent/gitagent}}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent
+We present the \textbf{GitAgentProtocol} (OpenGAP), an open standard that treats a
+git repository as the canonical unit of an AI agent. Where existing proposals such as
+Anthropic's Model Context Protocol (MCP) and Google's Agent-to-Agent (A2A) standardize
+the \emph{interfaces} between agents and the tools or peers they talk to, OpenGAP
+standardizes the \emph{definition, lifecycle, and governance} of the agent itself:
+identity (\texttt{SOUL.md}), constraints (\texttt{RULES.md}), segregation-of-duties
+(\texttt{DUTIES.md}), declarative capabilities (\texttt{skills/}, \texttt{tools/},
+\texttt{knowledge/}, \texttt{memory/}, \texttt{hooks/}), and regulatory-compliance
+artifacts (\texttt{compliance/})\,---\,all as files under version control.
+
+From this single source of truth, the reference CLI (\texttt{gapman}) deterministically
+exports the same agent into fifteen different execution environments, including Claude
+Code, OpenAI Agents SDK, CrewAI, Cursor, Gemini CLI, Codex, OpenCode, Kiro, Lyzr,
+OpenClaw, Nanobot, GitHub Copilot, GitHub Models, GitClaw, and a plain system-prompt
+target. We describe the repository-as-agent abstraction, the adapter model underlying
+this portability, fourteen architectural patterns that emerge when agents are defined
+git-natively (human-in-the-loop learning, agent versioning, branch-based deployment,
+CI/CD for agents, segregation of duties, live memory, SkillsFlow, LLM Wiki, and others),
+and a compliance model that maps directly to FINRA~3110/4511/2210,
+SEC~Reg\,BI/Reg\,S-P/17a-4, Federal Reserve~SR\,11-7, and CFPB~Circular~2022-03.
+Enforcement is achieved through \texttt{pre\_tool\_use} hooks with \texttt{fail\_open:
+false} semantics, making policy a first-class, testable artifact rather than a runtime
+wrapper.
+
+OpenGAP is released under the MIT license. The reference implementation has 2{,}700+
+GitHub stars, 21 adapters, 11 runtime runners, and ships as
+\texttt{@open-gitagent/gapman} on npm. This paper consolidates the specification, the
+architectural patterns, the portability model, and the compliance framing into a single
+citable artifact, and sets out an agenda for conformance testing, formal
+segregation-of-duties verification, and event-schema standardization for regulated
+agent-to-agent interaction.
+\end{abstract}
+
+% ===============================================================
+\section{Introduction}
+% ===============================================================
+
+The modern AI-agent ecosystem has two layers that are frequently conflated.
+
+The first is the \emph{interface} layer: how an agent talks to tools, how two agents
+exchange messages, how a user interface streams tokens back from a model. This layer is
+well-served by existing standards. MCP~\cite{mcp2024} standardizes tool calls; Google's
+A2A~\cite{a2a2024} standardizes agent-to-agent messaging; the Linux-Foundation ACP effort
+and specifications such as AG-UI handle user-facing streams and event transport.
+
+The second is the \emph{definition} layer: \emph{what the agent actually is}. Its
+identity, its hard constraints, its permitted duties, its skills, the documents it may
+consult, the memory it accumulates between sessions, the hooks that enforce its
+boundaries, the regulatory artifacts that justify its deployment. Today this layer is
+fragmented across framework-specific Python classes, hand-rolled YAML files,
+dashboard-only configuration in vendor products, system prompts copied between Slack
+channels, and screenshots pasted into compliance binders.
+
+This fragmentation has three consequences. \textbf{(i)~Non-portability}: an agent
+defined in CrewAI cannot be run in Claude Code without a rewrite.
+\textbf{(ii)~Non-auditability}: a system prompt in a dashboard does not appear in
+\texttt{git blame} and is not covered by SEC~17a-4 retention.
+\textbf{(iii)~Non-governance}: segregation of duties, human-in-the-loop supervision,
+and spending controls are wrapped around the agent by a runtime rather than being part
+of the agent's own definition, so they can be bypassed by choosing a different
+runtime.
+
+We argue that the correct remedy is to standardize the definition layer as a git
+repository, and we present \textbf{OpenGAP}\,---\,the GitAgentProtocol\,---\,to do
+so. The contributions of this paper are:
+
+\begin{enumerate}
+  \item The \textbf{repository-as-agent abstraction} (\S\ref{sec:protocol}): a directory
+  layout and manifest schema under which every aspect of an agent\,---\,identity,
+  rules, duties, skills, tools, knowledge, memory, hooks, sub-agents, and compliance
+  artifacts\,---\,is a file, under version control, diff-reviewable, and branch-able.
+  \item The \textbf{adapter model} (\S\ref{sec:portability}): a systematic way to
+  translate the canonical definition into fifteen different execution environments with
+  a measurable fidelity profile per target, validated by the reference implementation
+  \texttt{gapman}.
+  \item A catalogue of \textbf{fourteen architectural patterns}
+  (\S\ref{sec:patterns}) that emerge when agents are defined git-natively, including
+  human-in-the-loop via branch~+~PR, agent versioning via git tags, segregation of
+  duties via branch protection, CI/CD validation, branch-based deployment, live memory,
+  SkillsFlow, and the LLM Wiki pattern.
+  \item A \textbf{compliance-by-construction} model (\S\ref{sec:compliance}) that maps
+  FINRA, SEC, Federal Reserve, and CFPB controls onto the git substrate and specifies
+  enforcement through \texttt{pre\_tool\_use} hooks, yielding an audit trail that is
+  structurally identical to \texttt{git log}.
+\end{enumerate}
+
+The remainder of the paper is organized as follows.
+\S\ref{sec:related} positions OpenGAP against MCP, A2A, ADL-style capability
+schemas, raw YAML configuration, and framework-native definitions.
+\S\ref{sec:protocol} specifies the protocol.
+\S\ref{sec:portability} describes the adapter model and summarizes the fidelity
+profile across the fifteen current targets.
+\S\ref{sec:patterns} catalogues the lifecycle patterns.
+\S\ref{sec:compliance} develops the enterprise and regulatory story.
+\S\ref{sec:impl} describes the reference implementation.
+\S\ref{sec:cases} presents three case studies.
+\S\ref{sec:eval} reports adoption signals and an export-fidelity evaluation.
+\S\ref{sec:discuss} discusses limitations, a threat model, and governance.
+\S\ref{sec:future} sets out future work, and \S\ref{sec:conclusion} concludes.
+
+% ===============================================================
+\section{Related Work}\label{sec:related}
+% ===============================================================
+
+\paragraph{Interface protocols: MCP, A2A, ACP, AG-UI.}
+Anthropic's Model Context Protocol~\cite{mcp2024} specifies how a model host invokes
+external tools and resources; Google's Agent-to-Agent protocol~\cite{a2a2024} specifies
+how two autonomous agents negotiate capabilities and exchange task requests; the Linux
+Foundation's ACP and AG-UI specifications cover agent-user interaction streams. All four
+are interface specifications: they assume that an agent already exists and standardize
+one edge of it. None of them specify the agent itself\,---\,its identity, its
+constraints, its duties, or its regulatory artifacts. OpenGAP is complementary: a GAP
+agent may expose MCP-compatible tools under \texttt{tools/}, declare A2A compatibility
+in \texttt{agent.yaml} under \texttt{a2a:}, and stream via AG-UI at runtime, while the
+GAP spec governs the definition that sits behind those interfaces.
+
+\paragraph{Agent definition languages (ADLs).}
+Several efforts propose single-file YAML or JSON schemas for describing an agent's
+\emph{capabilities} for discovery or marketplace purposes. These resemble OpenAPI
+specifications for agents. OpenGAP differs in two ways. First, the unit of description
+is a directory, not a file: \texttt{SOUL.md}, \texttt{RULES.md}, \texttt{DUTIES.md},
+\texttt{skills/*/SKILL.md}, \texttt{knowledge/}, \texttt{memory/}, and \texttt{hooks/}
+are all first-class and all carry behavioral information that a single-file schema
+cannot capture without becoming unwieldy. Second, a GAP repository is directly
+\emph{runnable} and \emph{exportable}; it is not merely a capability advertisement.
+The two approaches compose: a GAP \texttt{agent.yaml} may embed an ADL-style capability
+manifest in its \texttt{tools} or \texttt{capabilities} block.
+
+\paragraph{Framework-native definitions.}
+LangChain, LangGraph, CrewAI, AutoGen, and similar frameworks define the agent as a
+Python or TypeScript class. This gives full programming-language expressivity, but
+yields three problems that OpenGAP addresses: (i)~the agent is not portable\,---\,a
+CrewAI agent cannot be trivially executed under OpenAI Agents SDK; (ii)~the agent's
+identity is not separable from its runtime, so a compliance reviewer must read code
+rather than a manifest; and (iii)~version history is line-level rather than
+semantic\,---\,\texttt{git log} shows diffs but not ``v2.1.0 changed the supervisory
+policy.'' OpenGAP sits above frameworks: the canonical definition is the repository,
+and the framework-native implementation is a derived artifact produced by
+\texttt{gapman export}.
+
+\paragraph{Raw YAML/JSON configuration.}
+Many teams reach for a hand-rolled \texttt{config.yaml}. This offers flexibility but no
+community-standard schema, no tooling layer, no reusable-skill ecosystem, and no
+regulatory mapping. The OpenGAP specification (\S\ref{sec:protocol}) is what
+\texttt{config.yaml} would be if teams agreed on one.
+
+\paragraph{Summary.}
+OpenGAP is the \emph{definition} standard to MCP's \emph{tool-call} standard and A2A's
+\emph{agent-to-agent} standard. Table~\ref{tab:related} summarizes the layer each
+addresses.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{@{}lllll@{}}
+\toprule
+Protocol & Layer & Unit & Portable? & Compliance story \\
+\midrule
+MCP~\cite{mcp2024}         & Tool call      & JSON-RPC endpoint    & n/a          & out of scope \\
+A2A~\cite{a2a2024}         & Agent-agent    & Message format       & n/a          & out of scope \\
+ACP / AG-UI                & Agent-user     & Event stream         & n/a          & out of scope \\
+ADL-style                  & Capability     & YAML/JSON file       & by adoption  & out of scope \\
+Framework-native           & Implementation & Python/TS class      & no           & ad-hoc \\
+Raw YAML                   & Config         & File                 & no           & none \\
+\textbf{OpenGAP}          & \textbf{Definition} & \textbf{Git repo} & \textbf{yes (15 adapters)} & \textbf{first-class} \\
+\bottomrule
+\end{tabular}
+\caption{OpenGAP occupies the definition layer; interface protocols are complementary.}
+\label{tab:related}
+\end{table}
+
+% ===============================================================
+\section{The OpenGAP Protocol}\label{sec:protocol}
+% ===============================================================
+
+\subsection{Design principles}
+
+OpenGAP is grounded in four principles.
+
+\begin{description}
+  \item[P1. Git-native.] Version control, branching, diffing, tagging, and PR review are
+  free operations. The agent definition is designed so that standard git workflows map
+  cleanly onto the operations of the agent lifecycle (learning, deployment, rollback,
+  review).
+  \item[P2. Framework-agnostic.] The canonical definition does not presuppose a runtime.
+  A deterministic export layer produces framework-specific artifacts on demand.
+  \item[P3. Declarative over programmatic.] Wherever practicable, behavior is described
+  in structured files (YAML, Markdown, JSON schemas) rather than code. Programmatic
+  escape hatches exist (hook scripts, tool implementations), but the default is
+  data.
+  \item[P4. Composable.] Agents can extend, depend on, and delegate to other agents,
+  each itself a git repository, pinned by version.
+\end{description}
+
+\subsection{The repository-as-agent abstraction}\label{sec:repo-as-agent}
+
+A GAP agent is a directory. Figure~\ref{fig:layout} shows the canonical layout. Only
+two files are strictly required: \texttt{agent.yaml}, which is validated against a
+JSON~Schema~\cite{schema2020}, and \texttt{SOUL.md}, which is free-form Markdown.
+All other files and directories are optional and additive.
+
+\begin{figure}[t]
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+my-agent/
+|-- agent.yaml              # [REQUIRED] Manifest (validated)
+|-- SOUL.md                 # [REQUIRED] Identity, personality, style
+|-- RULES.md                # Hard constraints ("must never", "must always")
+|-- DUTIES.md               # Segregation of duties policy / role boundaries
+|-- AGENTS.md               # Framework-agnostic fallback instructions
+|-- README.md               # Human documentation
+|-- skills/                 # Reusable capability modules
+|   `-- code-review/{SKILL.md, scripts/, references/, assets/, examples/}
+|-- tools/                  # MCP-compatible tool schemas + impls
+|-- knowledge/              # Reference documents (index.yaml + *.md|csv|pdf)
+|-- memory/                 # Persistent cross-session memory (MEMORY.md, archive/)
+|-- skillflows/             # Deterministic multi-step YAML procedures
+|-- hooks/                  # Lifecycle handlers (hooks.yaml + scripts/)
+|-- examples/               # Calibration interactions (few-shot)
+|-- agents/                 # Sub-agent definitions (recursive)
+|-- compliance/             # Regulatory artifacts
+|   `-- {regulatory-map.yaml, audit-log.schema.json, risk-assessment.md, ...}
+|-- config/                 # Environment-specific overrides (default.yaml, prod.yaml)
+`-- .gitagent/              # Runtime state (gitignored)
+\end{lstlisting}
+\caption{Canonical GAP directory layout. Any directory not used is simply absent.}
+\label{fig:layout}
+\end{figure}
+
+\subsection{Identity, rules, and duties}
+
+Three files carry the agent's normative content.
+
+\begin{itemize}
+  \item \textbf{\texttt{SOUL.md}} is the agent's identity: its personality, its voice,
+  the values it cares about, its communication style. It is short (typically under a
+  page) and stable across releases. It is the first document a reviewer reads.
+  \item \textbf{\texttt{RULES.md}} is the set of hard constraints: what the agent must
+  always do, and what it must never do. RULES are tested by the \texttt{audit}
+  command and referenced by enforcement hooks (\S\ref{sec:compliance}).
+  \item \textbf{\texttt{DUTIES.md}} declares the agent's role within a multi-agent
+  topology: what it is authorized to do, what it is explicitly forbidden from doing,
+  and which roles it cannot hold simultaneously. This is the file that operationalizes
+  segregation of duties for regulated deployments.
+\end{itemize}
+
+\subsection{Capabilities: skills, tools, knowledge, memory, hooks}
+
+A GAP agent's capabilities are factored into five concerns.
+
+\textbf{Skills} (\texttt{skills/<name>/SKILL.md}) are reusable capability modules:
+each is a Markdown file with YAML frontmatter describing inputs, outputs, and
+invocation conditions, plus optional scripts, references, assets, and examples.
+Skills are installable from a shared registry; a single skill can be used by
+multiple agents.
+
+\textbf{Tools} (\texttt{tools/<name>.yaml}) are MCP-compatible schemas describing
+an external function the agent may invoke, annotated with cost
+(\texttt{none|low|medium|high}) and side-effect class. Implementations may live in
+\texttt{tools/<name>.\{py,sh,js\}} or at an external endpoint.
+
+\textbf{Knowledge} (\texttt{knowledge/}) is reference material the agent may consult:
+Markdown, CSV, PDF, or any readable format, plus an \texttt{index.yaml} that hints
+retrieval keys. Knowledge is read-only from the agent's perspective.
+
+\textbf{Memory} (\texttt{memory/}) is persistent cross-session state: a primary
+\texttt{MEMORY.md} of at most 200 lines is always loaded; \texttt{memory/runtime/}
+carries live state (daily log, current context); \texttt{memory/archive/} holds
+historical snapshots that age out of the primary window. Memory is append-only by
+convention and audit-friendly.
+
+\textbf{Hooks} (\texttt{hooks/hooks.yaml}) register handlers for seven lifecycle
+events: \texttt{on\_session\_start}, \texttt{pre\_tool\_use}, \texttt{post\_tool\_use},
+\texttt{on\_error}, \texttt{user\_prompt\_submit}, \texttt{agent\_spawn}, and
+\texttt{on\_session\_end}. Each hook has a \texttt{fail\_open} flag; setting
+\texttt{fail\_open: false} on \texttt{pre\_tool\_use} upgrades a hook from an advisory
+to an enforcement boundary (see \S\ref{sec:hook-enforcement}).
+
+\subsection{Composition: extends, dependencies, sub-agents}
+
+An agent may extend a parent (\texttt{extends: <git-url>}), shadowing only the files
+it overrides. An agent may depend on peers (\texttt{dependencies:}) that are
+shallow-cloned into specified mount paths at a pinned version. An agent may define
+sub-agents in \texttt{agents/<name>/}, each itself a full GAP directory, and delegate
+to them via a structured handoff that carries enforced duty scope.
+
+\subsection{Formal manifest}
+
+Appendix~\ref{app:schema} gives an excerpt of \texttt{agent-yaml.schema.json}, the
+JSON Schema that \texttt{gapman validate} enforces on every \texttt{agent.yaml}. The
+schema currently has ten files covering the agent manifest, hooks, hook I/O, tools,
+skills, knowledge, memory, skillflows, configuration, and the marketplace descriptor.
+
+% ===============================================================
+\section{Portability: The Adapter Model}\label{sec:portability}
+% ===============================================================
+
+\subsection{Export-time versus runtime execution}
+
+A GAP agent can be consumed in two ways. In \emph{export} mode, \texttt{gapman export
+--format <target>} deterministically renders the canonical definition into a directory
+or file in the target framework's native format (for example, \texttt{.cursor/rules/}
+files for Cursor, \texttt{CLAUDE.md}~+~\texttt{.claude/} for Claude Code,
+\texttt{AGENTS.md}~+~\texttt{opencode.json} for OpenCode). In \emph{runtime} mode,
+\texttt{gapman run --adapter <target>} performs the equivalent export into a temporary
+workspace and launches the target runtime over it, one-shot or interactively.
+
+This separation matters. Export produces a reviewable artifact; runtime produces a
+running process. A team that wants to own the execution environment picks export;
+a team that wants convenience picks runtime.
+
+\subsection{Adapter inventory}
+
+Table~\ref{tab:adapters} enumerates the fifteen targets currently shipped. Each row
+lists the adapter name, whether export and/or runtime are supported, the external
+dependency required, and the target's native input format.
+
+\begin{table}[t]
+\centering
+\footnotesize
+\begin{tabular}{@{}lccll@{}}
+\toprule
+Adapter & Export & Runtime & Required & Target native format \\
+\midrule
+\texttt{claude-code}    & \checkmark & \checkmark & Claude Code CLI               & \texttt{CLAUDE.md} + \texttt{.claude/} \\
+\texttt{cursor}         & \checkmark & -          & Cursor IDE                    & \texttt{.cursor/rules/*.mdc} \\
+\texttt{codex}          & \checkmark & -          & OpenAI Codex CLI              & \texttt{AGENTS.md} + config \\
+\texttt{gemini}         & \checkmark & \checkmark & Google Gemini CLI             & \texttt{GEMINI.md} + \texttt{settings.json} \\
+\texttt{opencode}       & \checkmark & \checkmark & OpenCode CLI                  & \texttt{AGENTS.md} + \texttt{opencode.json} \\
+\texttt{kiro}           & \checkmark & -          & Kiro CLI                      & \texttt{.kiro/agents/*.json} \\
+\texttt{openai}         & \checkmark & \checkmark & OpenAI Agents SDK             & Python script \\
+\texttt{crewai}         & \checkmark & \checkmark & CrewAI CLI                    & YAML config \\
+\texttt{lyzr}           & \checkmark & \checkmark & Lyzr Studio                   & Lyzr agent definition \\
+\texttt{openclaw}       & \checkmark & \checkmark & OpenClaw CLI                  & Workspace layout \\
+\texttt{nanobot}        & \checkmark & \checkmark & Nanobot CLI                   & Nanobot config \\
+\texttt{copilot}        & \checkmark & -          & GitHub Copilot                & \texttt{.github/copilot-*} \\
+\texttt{github}         & \checkmark & \checkmark & GitHub Models                 & GitHub Actions workflow \\
+\texttt{gitclaw}        & \checkmark & \checkmark & GitClaw                       & GitClaw workspace \\
+\texttt{system-prompt}  & \checkmark & -          & any LLM                       & Concatenated text \\
+\bottomrule
+\end{tabular}
+\caption{The fifteen adapters shipped in the reference implementation. All export
+adapters are deterministic: the same GAP directory yields the same output bytes.}
+\label{tab:adapters}
+\end{table}
+
+\subsection{Fidelity profile}
+
+Not every adapter preserves every element of a GAP definition. Some targets have no
+notion of sub-agents; some cannot carry hooks; some accept only a single system-prompt
+blob. We define the \emph{fidelity profile} of an adapter as the set of GAP
+elements it faithfully represents in its target format. Table~\ref{tab:fidelity}
+summarizes the profile at a coarse grain; the full matrix (Appendix~\ref{app:fidelity})
+is regenerated by running \texttt{gapman export} against the reference agents
+\texttt{examples/standard/} and \texttt{examples/full/} and mechanically diffing the
+output for the presence of each element.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{@{}lccccccccc@{}}
+\toprule
+Adapter & \textsc{soul} & \textsc{rules} & \textsc{duties} & skills & tools & hooks & memory & sub-ag. & compl. \\
+\midrule
+\texttt{claude-code}   & F & F & F & F & F & F & F & F & F \\
+\texttt{cursor}        & F & F & P & F & F & - & - & - & P \\
+\texttt{opencode}      & F & F & P & F & F & F & P & - & F \\
+\texttt{gemini}        & F & F & P & F & F & - & P & - & P \\
+\texttt{codex}         & F & F & P & P & F & - & - & - & P \\
+\texttt{kiro}          & F & F & P & F & F & F & - & - & P \\
+\texttt{openai}        & F & F & P & F & F & - & - & - & - \\
+\texttt{crewai}        & F & F & P & F & F & - & - & F & - \\
+\texttt{lyzr}          & F & F & P & F & F & - & P & - & P \\
+\texttt{openclaw}      & F & F & P & F & F & P & F & F & F \\
+\texttt{nanobot}       & F & F & P & F & F & P & P & - & - \\
+\texttt{system-prompt} & F & F & P & P & - & - & - & - & - \\
+\bottomrule
+\end{tabular}
+\caption{Abbreviated fidelity profile. \textbf{F} = fully preserved, \textbf{P} =
+partially (text only, semantics dropped), \textbf{-} = not representable. Rows for
+\texttt{copilot}, \texttt{github}, \texttt{gitclaw} omitted for space; see
+Appendix~\ref{app:fidelity}.}
+\label{tab:fidelity}
+\end{table}
+
+The matrix clarifies a point often glossed over in portability claims: complete
+bidirectional interop is impossible because target frameworks differ in expressive
+power. What is possible is \emph{deterministic, lossy-where-necessary, documented}
+export\,---\,which is what OpenGAP provides.
+
+% ===============================================================
+\section{Lifecycle Patterns}\label{sec:patterns}
+% ===============================================================
+
+Defining agents git-natively yields architectural patterns that have no clean analogue
+in framework-native or dashboard-configured agents. We catalogue fourteen such patterns
+here; each has a corresponding diagram in \texttt{patterns/} in the reference
+repository.
+
+\paragraph{P1: Human-in-the-Loop via Branch~+~PR.}
+When an agent proposes a new skill, a new rule, or a change to its own memory, it
+opens a branch and a pull request. A human reviewer approves the PR before it merges
+into \texttt{main}. Reinforcement-learning-style updates are thereby subject to
+code-review semantics: diffs, comments, blocking approvals, revert via
+\texttt{git~revert}.
+
+\paragraph{P2: Agent Versioning via Git Tags.}
+Semantic version tags on the agent repository act as the deployment unit. A runtime
+consumes \texttt{github.com/org/agent@v2.1.0}. Rollback is \texttt{git checkout v2.0.3}
+rather than a dashboard operation. Undo history is the commit graph.
+
+\paragraph{P3: Segregation of Duties via Branch Protection.}
+\texttt{DUTIES.md} declares roles; the agent cannot approve its own work because it
+cannot merge its own branch. This is enforced by branch-protection rules on the hosting
+platform, not by the agent's internal logic\,---\,a structural guarantee rather than a
+policy assertion.
+
+\paragraph{P4: CI/CD for Agents.}
+\texttt{gapman validate --compliance} runs in continuous integration on every push.
+A failing agent manifest blocks the merge. Agent quality is treated as code quality.
+
+\paragraph{P5: Branch-Based Deployment.}
+\texttt{dev}, \texttt{staging}, and \texttt{main} branches correspond to deployment
+environments. An agent is promoted by merging. Environment-specific configuration
+lives in \texttt{config/<env>.yaml} and is selected at runtime.
+
+\paragraph{P6: Live Agent Memory.}
+\texttt{memory/MEMORY.md} is the 200-line cross-session memory; \texttt{memory/runtime/}
+holds a daily log and the current task context. Memory writes are commits, preserving
+the history of what the agent knew when.
+
+\paragraph{P7: Shared Context \& Skills.}
+When multiple agents share a working directory, root-level \texttt{skills/},
+\texttt{tools/}, and \texttt{knowledge/} are common across sub-agents defined in
+\texttt{agents/<name>/}. This yields a natural monorepo pattern without repository
+sprawl.
+
+\paragraph{P8: Agent Forking \& Remixing.}
+\texttt{extends: <git-url>} lets an agent fork a parent and shadow only the files it
+wishes to change. Open-source agents become a remix culture; vendor-specific overrides
+live in forks.
+
+\paragraph{P9: Knowledge Tree.}
+\texttt{knowledge/index.yaml} describes a hierarchical set of documents with
+retrieval hints; embeddings and search indices are derived artifacts
+materialized in \texttt{.gitagent/cache/}.
+
+\paragraph{P10: Agent Diff \& Audit Trail.}
+\texttt{git diff} between two tags is a diff of the agent's identity, rules, duties,
+and capabilities. Reviewers see exactly what changed between \texttt{v2.1.0} and
+\texttt{v2.2.0}\,---\,a property worth a great deal in regulated deployments.
+
+\paragraph{P11: Tagged Releases.}
+Tags are signed and optionally immutable. \texttt{v2025-Q1-audit} is the signed-off
+state of an agent at the close of a quarter. Pinning consumers to a tag is standard
+practice.
+
+\paragraph{P12: Secret Management via \texttt{.env}.}
+Secrets are never committed. \texttt{.env} is in \texttt{.gitignore}; the spec
+declares required environment variables in \texttt{agent.yaml} under
+\texttt{env\_vars:}, and the reference implementation warns on missing variables
+before runtime.
+
+\paragraph{P13: Lifecycle Hooks.}
+\texttt{bootstrap.md} runs at session start; \texttt{teardown.md} at session end; the
+seven-event hook system covers pre/post tool use, errors, prompt submission, and
+sub-agent spawn. Hooks are first-class, versioned alongside the agent.
+
+\paragraph{P14: SkillsFlow.}
+Deterministic multi-step workflows are described in \texttt{skillflows/*.yaml} with
+explicit \texttt{depends\_on} ordering and \texttt{\${{...}}} variable substitution.
+Where a skill is probabilistic (LLM reasoning), a skillflow is deterministic (a DAG
+over skills). SkillsFlows are the GAP counterpart to LangGraph's \texttt{StateGraph}.
+
+\vspace{0.5em}
+These patterns are not mere conveniences. Several\,---\,P1, P3, P4, P10\,---\,are
+structural preconditions for deploying agents under FINRA 3110 supervision or
+SR~11-7 model-risk management.
+
+% ===============================================================
+\section{Enterprise and Regulatory}\label{sec:compliance}
+% ===============================================================
+
+\subsection{Compliance as a first-class spec element}
+
+Most agent frameworks treat compliance as a runtime wrapper: a governance service
+intercepts tool calls, a policy engine audits responses, an SRE team files retention
+policies manually. The agent itself is unaware of its regulatory context. This is
+brittle\,---\,swapping the runtime loses the controls\,---\,and opaque\,---\,a
+compliance reviewer cannot read the agent's definition and determine what regime
+applies.
+
+OpenGAP inverts this. A \texttt{compliance:} block in \texttt{agent.yaml} and an
+optional \texttt{compliance/} directory carry the regulatory artifacts directly:
+
+\begin{lstlisting}[language=yamlex]
+compliance:
+  framework: FINRA
+  risk_tier: high              # SR 11-7 model-risk tier
+  rules:
+    - rule: "3110"             # FINRA supervision
+      description: All outputs reviewed before client delivery
+    - rule: "4511"             # FINRA books-and-records
+      description: Immutable audit trail of all interactions
+  communications:
+    fair_balanced: true        # FINRA 2210
+    no_misleading: true
+  data_governance:
+    pii_handling: redact       # Reg S-P
+    retention_years: 7         # SEC 17a-4
+  supervision:
+    human_in_the_loop: always
+  segregation_of_duties:
+    roles:
+      - id: analyst
+        permissions: [draft, revise]
+      - id: reviewer
+        permissions: [review, approve, reject]
+    conflicts:
+      - [analyst, reviewer]
+    enforcement: strict
+\end{lstlisting}
+
+\subsection{Regulatory mapping}
+
+Table~\ref{tab:regs} maps GAP fields onto the specific regulations they support. This
+is not a legal opinion; it is a structural mapping that auditors use to demonstrate
+control coverage.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{@{}lll@{}}
+\toprule
+Regulation & Control & GAP field(s) \\
+\midrule
+FINRA~3110          & Supervision           & \texttt{supervision.human\_in\_the\_loop}, hook PR review \\
+FINRA~3120          & Compliance testing    & \texttt{compliance/validation-schedule.yaml} \\
+FINRA~4511          & Books and records     & \texttt{compliance.recordkeeping.retention\_years} \\
+FINRA~2210          & Communications        & \texttt{communications.fair\_balanced} \\
+Reg~Notice~24-09    & GenAI/LLM application & entire \texttt{compliance:} block \\
+SEC~Reg~BI          & Best interest         & \texttt{RULES.md} best-interest constraints \\
+SEC~Reg~S-P         & Privacy / PII         & \texttt{data\_governance.pii\_handling} \\
+SEC~17a-4           & Electronic records    & \texttt{retention\_years: 7}, git history \\
+Federal~Res.~SR~11-7& Model risk management & \texttt{risk\_tier}, \texttt{compliance/risk-assessment.md} \\
+Federal~Res.~SR~23-4& AI risk management    & \texttt{compliance/validation-schedule.yaml} \\
+CFPB~Circular~2022-03 & Adverse-action notices & \texttt{RULES.md} explainability requirements \\
+\bottomrule
+\end{tabular}
+\caption{GAP fields mapped onto US financial regulations and guidance.}
+\label{tab:regs}
+\end{table}
+
+\subsection{Hook-based enforcement}\label{sec:hook-enforcement}
+
+Declaring a policy is not enforcing it. Enforcement happens at \texttt{pre\_tool\_use}:
+before any tool call, the registered pre-tool hook fires, receives the tool name and
+arguments on \texttt{stdin}, and exits \texttt{0} to allow or non-zero to block. A
+hook configured with \texttt{fail\_open: false} blocks the tool call on error, timeout,
+or non-zero exit. This is the mechanism by which spending caps, PII redaction, and
+segregation-of-duties conflicts are structurally enforced.
+
+Concretely, a financial agent might register a \texttt{pre\_tool\_use} hook that reads
+\texttt{compliance.financial\_governance.spending.max\_per\_transaction\_cents}, parses
+the pending payment amount from tool input, and blocks the call if the cap is
+exceeded. The hook is part of the agent repository, under version control, and
+reviewable in the same PR as the policy it enforces\,---\,a property that runtime-only
+policy engines do not provide.
+
+\subsection{Audit trail is \texttt{git log}}
+
+Every commit to the agent repository is an audit-eligible event. \texttt{git log}
+gives a timestamped, attributed, immutable sequence. \texttt{git blame} answers
+``who changed this rule, when, and why'' in constant time. No separate audit store is
+needed. For regulated domains, an organization pins its agents to signed tags, writes
+post-hoc review findings as PR comments, and archives the repository on
+retention-compliant storage. The compliance property is structural rather than
+bolted-on. See \cite{gitclose} for a worked example of this pattern applied to the
+monthly financial close.
+
+\subsection{Threat model: what OpenGAP does not prevent}\label{sec:threat}
+
+Honesty about limitations is as valuable as a feature list. OpenGAP does \emph{not}
+prevent the following:
+
+\begin{enumerate}
+  \item \textbf{A runtime that ignores hooks.} If a target framework does not implement
+  \texttt{pre\_tool\_use} hooks, enforcement silently degrades to advisory. The export
+  fidelity matrix (Table~\ref{tab:fidelity}) makes this explicit per target.
+  \item \textbf{An adversary with commit rights.} Branch protection defeats accidents;
+  it does not defeat insiders. Signed commits and code-owner reviews mitigate but do
+  not eliminate this.
+  \item \textbf{Prompt injection through knowledge.} Documents in \texttt{knowledge/}
+  may carry payloads that override rules. Defensive measures (content filters,
+  provenance checks) are out of scope for the spec.
+  \item \textbf{Model capability drift.} A regulatory statement such as
+  ``human\_in\_the\_loop: always'' does not verify that the human actually reviewed the
+  output; it only requires that the runtime offer a review gate.
+  \item \textbf{Extrinsic compliance obligations.} GAP maps structural controls onto
+  git workflows. Jurisdiction-specific duties (MiCA, AI Act, HIPAA specifics) require
+  local legal review; GAP provides the substrate, not the opinion.
+\end{enumerate}
+
+% ===============================================================
+\section{Reference Implementation}\label{sec:impl}
+% ===============================================================
+
+The reference implementation is \texttt{gapman} (``GAP manager''), a TypeScript CLI
+published to npm as both \texttt{@open-gitagent/gapman} (scoped, provenance-signed)
+and \texttt{gapman} (unscoped alias). The repository is
+\texttt{github.com/open-gitagent/gitagent}; the license is MIT.
+
+\texttt{gapman} exposes the following verbs: \texttt{init} (scaffold from templates
+\texttt{minimal}, \texttt{standard}, \texttt{full}, \texttt{llm-wiki}),
+\texttt{validate} (JSON-schema validation and optional compliance audit),
+\texttt{info} (summarize an agent), \texttt{export} (render to a target framework),
+\texttt{import} (convert from Claude, Cursor, CrewAI, OpenCode, Gemini, or Codex
+format), \texttt{install} (resolve git-based dependencies), \texttt{audit}
+(compliance report), \texttt{skills} (search, install, list, inspect),
+\texttt{run} (one-shot or interactive execution under an adapter),
+\texttt{registry} (browse the community registry), and \texttt{lyzr} (Lyzr-Studio
+integration). The CLI's help surface and semantics track the specification strictly.
+
+Adapters and runners are separated: \texttt{src/adapters/} contains deterministic
+renderers, while \texttt{src/runners/} contains the code that provisions a workspace
+and launches the target runtime. Adapters are pure functions of the agent directory;
+runners additionally manage processes, credentials, and interactive streams.
+
+% ===============================================================
+\section{Case Studies}\label{sec:cases}
+% ===============================================================
+
+\subsection{NVIDIA Deep Researcher}
+
+\texttt{examples/nvidia-deep-researcher/} is a three-agent hierarchy modeled on NVIDIA
+AIQ's deep-research workflow\,---\,an orchestrator, a planner, and a researcher
+sub-agent with three skills (paper search, web search, knowledge retrieval). The GAP
+version captures the SOD hierarchy in \texttt{DUTIES.md}
+(\texttt{segregation\_of\_duties.conflicts: [[orchestrator, researcher]]}), making
+the structural guarantee that no single agent may both plan and execute the research
+step. Exported to Claude Code, the hierarchy becomes a parent agent with two
+sub-agents; exported to CrewAI, the same hierarchy becomes three crew members with a
+task graph. The identity, duties, and skills are unchanged; only the native encoding
+differs.
+
+\subsection{Full-compliance financial agent}
+
+\texttt{examples/full/} is a production-grade compliance agent. It includes a
+\texttt{compliance/regulatory-map.yaml} mapping 12 specific rules to 12 controls,
+a \texttt{compliance/risk-assessment.md} justifying a \texttt{risk\_tier: high}
+classification under SR~11-7, and a \texttt{compliance/validation-schedule.yaml}
+specifying annual bias testing and quarterly parallel testing. A
+\texttt{hooks/pre\_tool\_use.sh} with \texttt{fail\_open: false} blocks tool
+calls that violate the spending cap. The agent is not a toy: every file is
+what a regulated team would produce, and the total diff between v1.0.0 and
+v1.1.0 of the agent is a coherent, reviewable PR.
+
+\subsection{LLM Wiki}
+
+\texttt{examples/llm-wiki/} implements the knowledge-compile pattern described by
+Karpathy~\cite{karpathy_llmwiki}: \texttt{knowledge/} holds raw source material,
+\texttt{memory/wiki/} holds compiled wiki pages, and three
+skills\,---\,\texttt{wiki-ingest}, \texttt{wiki-query}, \texttt{wiki-lint}\,---\,cover
+the life cycle of the wiki. A \texttt{memory/log.md} operation log records every
+ingestion and query, yielding a complete provenance trail. The case study
+demonstrates that a substantive cognitive pattern from outside the GAP community
+fits inside the protocol without spec changes.
+
+% ===============================================================
+\section{Evaluation}\label{sec:eval}
+% ===============================================================
+
+We report evaluation along three axes: adoption, fidelity, and qualitative comparison.
+
+\subsection{Adoption signals}
+
+As of \today, the reference repository \texttt{open-gitagent/gitagent} has
+\textbf{2{,}700+} GitHub stars, \textbf{21 community adapters} (Cursor, Kiro, Codex,
+Gemini, OpenCode contributed via pull request by external authors), \textbf{15+ closed
+issues} and active RFC discussions, and has been published on npm under both the
+scoped and unscoped names. Adapter contributions from external developers are the
+strongest signal that the protocol is perceived as a neutral substrate rather than a
+vendor product\,---\,no contributor has standing to force a breaking change in favor
+of their framework. These numbers are to be regenerated from the GitHub API at the
+time of arXiv submission; we report them here as a floor.
+
+\subsection{Export fidelity}
+
+The fidelity profile (Table~\ref{tab:fidelity}, full matrix in
+Appendix~\ref{app:fidelity}) is derived by running
+\texttt{gapman export --format <target>} over the reference agents
+\texttt{examples/standard/} and \texttt{examples/full/} and diffing the output for the
+presence of each GAP element. Two headline observations:
+
+\begin{enumerate}
+  \item \texttt{claude-code} is the only adapter that achieves full fidelity across
+  all nine tested elements. This reflects that GAP and Claude Code were co-designed:
+  GAP's directory layout is close to Claude Code's native \texttt{CLAUDE.md} +
+  \texttt{.claude/} convention.
+  \item Hooks and sub-agents are the most commonly lost elements on export.
+  \texttt{cursor}, \texttt{gemini}, \texttt{codex}, \texttt{openai}, and
+  \texttt{system-prompt} all drop hooks entirely. Policy enforcement via hooks is
+  therefore a \emph{GAP-native} guarantee and a \emph{per-target} degradation; teams
+  requiring enforcement should verify that their target runtime executes the hook
+  layer.
+\end{enumerate}
+
+\subsection{Qualitative comparison}
+
+Table~\ref{tab:qualitative} extends Table~\ref{tab:related} with feature-level
+comparison. The contrast is strongest in compliance and portability axes and is
+indistinguishable from the status-quo on fundamental interface concerns (tool calls,
+streaming, messaging)\,---\,which is as intended: OpenGAP complements MCP/A2A rather
+than competing with them.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Capability & GAP & MCP & A2A & ADL-style & Framework-native \\
+\midrule
+Defines the agent's identity      & \checkmark & -          & -          & partial    & \checkmark \\
+Versioned via git tags            & \checkmark & -          & -          & -          & partial \\
+Portable across frameworks        & \checkmark (15) & -     & -          & by adoption & - \\
+Compliance fields first-class     & \checkmark & -          & -          & -          & - \\
+SOD structural guarantee          & \checkmark & -          & -          & -          & ad-hoc \\
+Enforcement hook layer            & \checkmark & -          & -          & -          & ad-hoc \\
+Runnable from repo URL            & \checkmark & -          & -          & -          & - \\
+Tool-call format                  & uses MCP   & \checkmark & -          & -          & framework \\
+Agent-to-agent messaging          & uses A2A   & -          & \checkmark & -          & framework \\
+\bottomrule
+\end{tabular}
+\caption{Feature-level comparison. \checkmark = first-class, partial = supported but
+ad-hoc, - = out of scope or absent.}
+\label{tab:qualitative}
+\end{table}
+
+% ===============================================================
+\section{Discussion}\label{sec:discuss}
+% ===============================================================
+
+\paragraph{Limitations.}
+The specification is at v0.1.0. Several elements are deliberately under-formalized:
+memory archival policy, skill-registry trust model, and the interaction between
+\texttt{config/<env>.yaml} and \texttt{hooks/} in multi-tenant runtimes. A conformance
+test suite does not yet exist; today's adapters are validated by unit tests and by
+community use, not by a formal conformance profile. Formal semantics for
+segregation-of-duties (\S\ref{sec:patterns} P3) are described in natural language
+rather than verified by a model checker. These are all addressed in future work
+(\S\ref{sec:future}).
+
+\paragraph{Vendor-capture risk and governance.}
+An open protocol with a dominant reference implementation is one bug report away from
+becoming a de-facto vendor standard. OpenGAP addresses this through three structural
+choices: (i)~the spec and the reference implementation are in the same repository,
+under the same license (MIT), under the same MIT-licensed working-group
+governance\,---\,no silent re-licensing; (ii)~adapter contributions from external
+authors for Cursor, Kiro, Codex, Gemini, OpenCode, Copilot, and GitHub Models
+demonstrate plural interest and reduce the chance that any one target dictates
+changes; (iii)~named implementations (for example, proposed financial-governance
+firewalls) are listed in docs as \emph{example} implementations, never as \emph{the
+reference}, to avoid privileging a single vendor in spec text. The working group is
+expanding contributor representation as adoption grows.
+
+\paragraph{Why a protocol and not a framework.}
+A framework solves problems for the framework's users. A protocol creates a substrate
+that multiple competing products can build on. OpenGAP chooses the protocol
+path\,---\,the reference implementation (\texttt{gapman}) is one of potentially many,
+and the spec has deliberate latitude so that vendors can add value within target
+adapters without needing to modify the canonical definition.
+
+% ===============================================================
+\section{Future Work}\label{sec:future}
+% ===============================================================
+
+\begin{enumerate}
+  \item \textbf{Conformance test suite.} A portable, language-agnostic test suite that
+  a prospective adapter implementer can run to certify fidelity claims. This is the
+  single highest-leverage next artifact.
+  \item \textbf{Formal SOD semantics.} Express \texttt{DUTIES.md} conflict rules as a
+  set of logical assertions, and verify that an agent's tool-call trace satisfies
+  them. A model checker such as TLA$^+$ or Alloy is a natural fit.
+  \item \textbf{Event schema for financial governance.} Once two or more external
+  enforcement implementations exist, standardize a \texttt{payment\_required}~/
+  \texttt{payment\_approval}~/ \texttt{payment\_receipt} event schema as an RFC
+  addendum. Doing this prematurely risks standardizing imaginary interop; waiting
+  for real implementations grounds it in observed need~\cite{rfc_38}.
+  \item \textbf{Deeper A2A integration.} GAP currently declares A2A compatibility in
+  \texttt{agent.yaml} but does not ship an A2A server adapter. A reference A2A
+  adapter would close the loop between agent-to-agent interfaces and GAP definitions.
+  \item \textbf{Empirical user study.} A controlled study of team velocity when
+  defining, porting, and auditing agents under GAP versus framework-native
+  equivalents. This is the evaluation that a full systems-venue submission would
+  require.
+\end{enumerate}
+
+% ===============================================================
+\section{Conclusion}\label{sec:conclusion}
+% ===============================================================
+
+Agents are now a production software category. The definition layer\,---\,what an
+agent is, what it is permitted to do, what it is accountable for, and how it is
+versioned over time\,---\,has until now been served by framework-native code,
+hand-rolled YAML, or dashboard configuration, none of which are portable, auditable,
+or governance-friendly.
+
+OpenGAP standardizes this layer as a git repository. A single canonical definition
+exports to fifteen execution environments with a documented fidelity profile; fourteen
+lifecycle patterns emerge naturally from the git substrate (human-in-the-loop,
+versioning, segregation of duties, CI/CD, branch-based deployment, live memory,
+SkillsFlow, LLM Wiki, and others); and compliance becomes a first-class spec element
+mapped directly onto FINRA, SEC, Federal Reserve, and CFPB controls, with enforcement
+implemented through hooks that are themselves under version control.
+
+The protocol is MIT-licensed, the reference implementation is 2{,}700+-star
+community-maintained, and the full specification, patterns, and adapters ship together
+in one repository. We invite the research and practitioner community to contribute
+adapters, conformance tests, case studies, and critical review.
+
+% ===============================================================
+\section*{Acknowledgments}
+% ===============================================================
+\noindent
+The OpenGAP working group thanks contributors to the reference implementation and to
+the Cursor, Kiro, Codex, Gemini, OpenCode, and Copilot adapters. Early design
+conversations with the MCP and A2A communities sharpened the scoping of OpenGAP as a
+complementary definition layer. All remaining mistakes are our own.
+
+% ===============================================================
+\bibliographystyle{plain}
+\bibliography{bibliography}
+% ===============================================================
+
+\newpage
+\appendix
+
+% ===============================================================
+\section{agent.yaml Schema (Excerpt)}\label{app:schema}
+% ===============================================================
+
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+{
+  "$id": "https://gitagent.sh/spec/v0.1.0/agent-yaml.schema.json",
+  "type": "object",
+  "required": ["name", "version", "description"],
+  "properties": {
+    "spec_version":  { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "name":          { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "version":       { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+].+)?$" },
+    "description":   { "type": "string" },
+    "model": {
+      "type": "object",
+      "properties": {
+        "preferred": { "type": "string" },
+        "fallback":  { "type": "array", "items": { "type": "string" } },
+        "constraints": {
+          "type": "object",
+          "properties": {
+            "temperature":   { "type": "number", "minimum": 0, "maximum": 2 },
+            "max_tokens":    { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    "compliance": {
+      "type": "object",
+      "properties": {
+        "framework":           { "type": "string" },
+        "risk_tier":           { "enum": ["low", "medium", "high", "critical"] },
+        "supervision":         { "type": "object" },
+        "segregation_of_duties": { "type": "object" },
+        "recordkeeping":       { "type": "object" }
+      }
+    },
+    "dependencies": { "type": "array" },
+    "extends":      { "type": "string" },
+    "a2a":          { "type": "array", "items": { "type": "string" } }
+  }
+}
+\end{lstlisting}
+
+% ===============================================================
+\section{Full Fidelity Matrix}\label{app:fidelity}
+% ===============================================================
+
+\begin{table}[h]
+\centering
+\scriptsize
+\begin{tabular}{@{}lccccccccc@{}}
+\toprule
+Adapter & \textsc{soul} & \textsc{rules} & \textsc{duties} & skills & tools & hooks & memory & sub-ag. & compl. \\
+\midrule
+\texttt{claude-code}     & F & F & F & F & F & F & F & F & F \\
+\texttt{cursor}          & F & F & P & F & F & - & - & - & P \\
+\texttt{codex}           & F & F & P & P & F & - & - & - & P \\
+\texttt{gemini}          & F & F & P & F & F & - & P & - & P \\
+\texttt{opencode}        & F & F & P & F & F & F & P & - & F \\
+\texttt{kiro}            & F & F & P & F & F & F & - & - & P \\
+\texttt{openai}          & F & F & P & F & F & - & - & - & - \\
+\texttt{crewai}          & F & F & P & F & F & - & - & F & - \\
+\texttt{lyzr}            & F & F & P & F & F & - & P & - & P \\
+\texttt{openclaw}        & F & F & P & F & F & P & F & F & F \\
+\texttt{nanobot}         & F & F & P & F & F & P & P & - & - \\
+\texttt{copilot}         & F & F & P & P & P & - & - & - & - \\
+\texttt{github}          & F & F & P & P & F & - & - & - & P \\
+\texttt{gitclaw}         & F & F & F & F & F & F & F & F & F \\
+\texttt{system-prompt}   & F & F & P & P & - & - & - & - & - \\
+\bottomrule
+\end{tabular}
+\caption{Full fidelity matrix for the fifteen shipped adapters. \textbf{F} = fully
+preserved, \textbf{P} = partially preserved (text only or structure lost), \textbf{-}
+= not representable in the target format.}
+\end{table}
+
+\end{document}

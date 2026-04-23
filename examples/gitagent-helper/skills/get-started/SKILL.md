@@ -17,8 +17,8 @@ When a user is new to gitagent, wants to set up their first agent, or asks "how 
 
 ### Installation
 ```bash
-npm install -g @open-gitagent/gitagent
-gitagent --version
+npm install -g @open-gitagent/gapman
+gapman --version
 ```
 
 ### Create Your First Agent
