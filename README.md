@@ -2,15 +2,17 @@
   <img src="banner.png" alt="gitagent banner" width="700" />
 </p>
 
-# gitagent | your repository becomes your agent
+# GitAgentProtocol (Open GAP) | your repository becomes your agent
 
-[![npm version](https://img.shields.io/npm/v/@open-gitagent/gitagent)](https://www.npmjs.com/package/@open-gitagent/gitagent)
+> **`gapman`** — the GitAgentProtocol (GAP) Manager CLI, published as [`@open-gitagent/gapman`](https://www.npmjs.com/package/@open-gitagent/gapman). Previously published as `@open-gitagent/gitagent`.
+
+[![npm version](https://img.shields.io/npm/v/@open-gitagent/gapman)](https://www.npmjs.com/package/@open-gitagent/gapman)
 [![CI](https://github.com/open-gitagent/gitagent/actions/workflows/ci.yml/badge.svg)](https://github.com/open-gitagent/gitagent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Spec: v0.1.0](https://img.shields.io/badge/spec-v0.1.0-blue)](https://github.com/open-gitagent/gitagent/blob/main/spec/SPECIFICATION.md)
 [![Node >= 18](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 
-A framework-agnostic, git-native standard for defining AI agents. Clone a repo, get an agent.
+GitAgentProtocol (Open GAP) is a framework-agnostic, git-native standard for defining AI agents. Clone a repo, get an agent. `gapman` is its reference CLI.
 
 ## Why
 
@@ -134,7 +136,7 @@ Fork any public agent repo, customize its `SOUL.md`, add your own skills, and PR
 <img src="patterns/agent-forking.png" alt="Agent Forking & Remixing" width="600" />
 
 ### CI/CD for Agents
-Run `gitagent validate` on every push via GitHub Actions. Test agent behavior in CI, block bad merges, and auto-deploy — treat agent quality like code quality.
+Run `gapman validate` on every push via GitHub Actions. Test agent behavior in CI, block bad merges, and auto-deploy — treat agent quality like code quality.
 
 <img src="patterns/ci-cd-agents.png" alt="CI/CD for Agents" width="600" />
 
@@ -214,7 +216,7 @@ This pattern is demonstrated with [NVIDIA's AIQ Deep Researcher](https://github.
 
 - **Fork for a new domain** — edit `SOUL.md` for legal/medical/finance research without touching Python
 - **Version prompts independently** — `git diff` when the orchestrator's style regresses
-- **Validate SOD** — `gitagent validate --compliance` ensures the orchestrator can't also be the researcher
+- **Validate SOD** — `gapman validate --compliance` ensures the orchestrator can't also be the researcher
 - **Export to other runtimes** — same identity on Claude Code, OpenAI, or as a raw system prompt
 
 ```
@@ -236,20 +238,22 @@ See [`examples/nvidia-deep-researcher/`](examples/nvidia-deep-researcher/) for t
 
 ```bash
 # Install
-npm i @open-gitagent/gitagent
+npm i -g @open-gitagent/gapman
 
 # Create a new agent
-gitagent init --template standard
+gapman init --template standard
 
 # Validate
-gitagent validate
+gapman validate
 
 # View agent info
-gitagent info
+gapman info
 
 # Export to system prompt
-gitagent export --format system-prompt
+gapman export --format system-prompt
 ```
+
+> `gitagent` is installed as an alias — all `gapman <cmd>` calls work as `gitagent <cmd>` too.
 
 ## agent.yaml
 
@@ -300,18 +304,20 @@ compliance:
 
 ## CLI Commands
 
+Both `gapman` and `gitagent` refer to the same binary — use whichever you prefer.
+
 | Command | Description |
 |---------|-------------|
-| `gitagent init [--template]` | Scaffold new agent (`minimal`, `standard`, `full`) |
-| `gitagent validate [--compliance]` | Validate against spec and regulatory requirements |
-| `gitagent info` | Display agent summary |
-| `gitagent export --format <fmt>` | Export to other formats (see adapters below) |
-| `gitagent import --from <fmt> <path>` | Import (`claude`, `cursor`, `crewai`, `opencode`) |
-| `gitagent run <source> --adapter <a>` | Run an agent from a git repo or local directory |
-| `gitagent install` | Resolve and install git-based dependencies |
-| `gitagent audit` | Generate compliance audit report |
-| `gitagent skills <cmd>` | Manage skills (`search`, `install`, `list`, `info`) |
-| `gitagent lyzr <cmd>` | Manage Lyzr agents (`create`, `update`, `info`, `run`) |
+| `gapman init [--template]` | Scaffold new agent (`minimal`, `standard`, `full`, `llm-wiki`) |
+| `gapman validate [--compliance]` | Validate against spec and regulatory requirements |
+| `gapman info` | Display agent summary |
+| `gapman export --format <fmt>` | Export to other formats (see adapters below) |
+| `gapman import --from <fmt> <path>` | Import (`claude`, `cursor`, `crewai`, `opencode`) |
+| `gapman run <source> --adapter <a>` | Run an agent from a git repo or local directory |
+| `gapman install` | Resolve and install git-based dependencies |
+| `gapman audit` | Generate compliance audit report |
+| `gapman skills <cmd>` | Manage skills (`search`, `install`, `list`, `info`) |
+| `gapman lyzr <cmd>` | Manage Lyzr agents (`create`, `update`, `info`, `run`) |
 
 ## Compliance
 
@@ -341,7 +347,7 @@ gitagent has first-class support for financial regulatory compliance:
 
 Inspired by [Salient AI](https://www.trysalient.com/)'s purpose-built agent architecture and the [FINOS AI Governance Framework](https://air-governance-framework.finos.org/mitigations/mi-22_multi-agent-isolation-and-segmentation.html).
 
-Run `gitagent audit` for a full compliance checklist against your agent configuration.
+Run `gapman audit` for a full compliance checklist against your agent configuration.
 
 ## Adapters
 
@@ -364,10 +370,13 @@ Adapters are used by both `export` and `run`. Available adapters:
 
 ```bash
 # Export to system prompt
-gitagent export --format system-prompt
+gapman export --format system-prompt
 
 # Run an agent directly
-gitagent run ./my-agent --adapter lyzr
+gapman run ./my-agent --adapter lyzr
+
+# Run an agent definition against a separate target workspace
+gapman run --dir ./agents/reviewer --workspace ~/code/my-app --adapter claude -p "Review this repository"
 ```
 
 ## Inheritance & Composition
